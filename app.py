@@ -14,18 +14,44 @@ lucky_string = st.sidebar.text_input("Enter Lucky String", value="3964215")
 unit_no = st.sidebar.text_input("Unit No", value="02-73")
 
 st.sidebar.markdown("---")
+st.sidebar.header("Data Source")
+
+# Option to upload a CSV file
+uploaded_file = st.sidebar.file_uploader("Upload your TOTO results CSV", type=["csv"])
+
+# If no file uploaded, fallback to a remote URL (set your own below)
+DATA_URL = "https://raw.githubusercontent.com/yourusername/toto-data/main/toto_results.csv"  # 🔁 REPLACE WITH YOUR RAW URL
+
+st.sidebar.markdown("---")
 st.sidebar.caption("⚠️ This tool is for entertainment only. No guarantee of winning.")
 
 # --- DATA LOADING (with caching and fallback) ---
-DATA_URL = "https://raw.githubusercontent.com/yourusername/toto-data/main/toto_results.csv"  # Replace with your actual URL
+@st.cache_data
+def load_data_from_url(url):
+    df = pd.read_csv(url)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values('Date', ascending=False).reset_index(drop=True)
+    return df
 
 @st.cache_data
-def load_data():
+def load_data_from_file(uploaded_file):
+    df = pd.read_csv(uploaded_file)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values('Date', ascending=False).reset_index(drop=True)
+    return df
+
+# Load the data
+if uploaded_file is not None:
     try:
-        df = pd.read_csv(DATA_URL)
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values('Date', ascending=False).reset_index(drop=True)
-        return df
+        df = load_data_from_file(uploaded_file)
+        st.sidebar.success(f"Loaded {len(df)} draws from uploaded file.")
+    except Exception as e:
+        st.sidebar.error("Error reading uploaded file. Please ensure it has columns: Date, N1, N2, N3, N4, N5, N6, Add")
+        st.stop()
+else:
+    try:
+        df = load_data_from_url(DATA_URL)
+        st.sidebar.info(f"Loaded {len(df)} draws from remote source.")
     except Exception as e:
         st.warning("Could not load remote data. Using sample data (last 4 draws).")
         # Fallback mock data
@@ -41,10 +67,6 @@ def load_data():
         }
         df = pd.DataFrame(data)
         df['Date'] = pd.to_datetime(df['Date'])
-        return df
-
-with st.spinner("Loading historical data..."):
-    df = load_data()
 
 # --- PREPARE FREQUENCY DATA ---
 all_numbers = df[['N1', 'N2', 'N3', 'N4', 'N5', 'N6']].values.flatten()
@@ -54,30 +76,24 @@ cold_numbers = freq_all.nsmallest(10).index.tolist()
 
 # --- HELPER FUNCTIONS FOR NUMBER GENERATION ---
 def numbers_from_profile(lucky_str, unit_str, freq_series):
-    """
-    Generate 6 numbers based on lucky string, unit number, and hot numbers.
-    """
-    # Extract digits from lucky string
+    """Generate 6 numbers based on lucky string, unit number, and hot numbers."""
     lucky_digits = [int(ch) for ch in lucky_str if ch.isdigit()]
     if not lucky_digits:
-        lucky_digits = [3, 9, 6, 4, 2, 1, 5]  # fallback
-    base = sum(lucky_digits) % 45 + 1  # 1..45
+        lucky_digits = [3, 9, 6, 4, 2, 1, 5]
+    base = sum(lucky_digits) % 45 + 1
 
-    # Extract digits from unit number
     unit_digits = [int(ch) for ch in unit_str if ch.isdigit()]
     if not unit_digits:
-        unit_digits = [0, 2, 7, 3]  # fallback
+        unit_digits = [0, 2, 7, 3]
     unit_sum = sum(unit_digits) % 20
 
-    # Generate candidate numbers
     numbers = []
-    for i in range(10):  # generate extra to ensure uniqueness
+    for i in range(10):
         num = (base + i * unit_sum + (i+1)*7) % 49
         if num == 0:
             num = 49
         numbers.append(num)
 
-    # Remove duplicates and keep first 6
     unique_nums = []
     for n in numbers:
         if n not in unique_nums:
@@ -85,8 +101,8 @@ def numbers_from_profile(lucky_str, unit_str, freq_series):
         if len(unique_nums) == 6:
             break
 
-    # If we don't have 6, fill with hottest numbers (ensuring they aren't already chosen)
-    hot_list = hot_numbers  # use global hot_numbers
+    # Fill with hottest numbers if needed
+    hot_list = hot_numbers
     i = 0
     while len(unique_nums) < 6 and i < len(hot_list):
         if hot_list[i] not in unique_nums:
@@ -96,7 +112,6 @@ def numbers_from_profile(lucky_str, unit_str, freq_series):
     return sorted(unique_nums[:6])
 
 def weighted_random_selection(freq_series, n=6):
-    """Pick n numbers weighted by historical frequency."""
     probs = freq_series / freq_series.sum()
     return np.random.choice(freq_series.index, size=n, replace=False, p=probs).tolist()
 
@@ -122,7 +137,6 @@ with tab1:
         st.success(f"Numbers: {latest['N1']}, {latest['N2']}, {latest['N3']}, {latest['N4']}, {latest['N5']}, {latest['N6']}")
         st.warning(f"Additional: {latest['Add']}")
 
-    # Hot & Cold tables
     st.subheader("🔥 Hot & Cold Numbers")
     colA, colB = st.columns(2)
     with colA:
@@ -159,7 +173,6 @@ with tab2:
 # ================= TAB 3: TRENDS & PATTERNS =================
 with tab3:
     st.subheader("Number Trends Over Time")
-    # Scatter plot of all numbers drawn per draw
     draw_numbers = df.melt(id_vars=['Date'], value_vars=['N1','N2','N3','N4','N5','N6'],
                            var_name='Position', value_name='Number')
     fig_scatter = px.scatter(draw_numbers, x='Date', y='Number', color='Position',
@@ -168,7 +181,6 @@ with tab3:
     st.plotly_chart(fig_scatter, use_container_width=True)
 
     st.subheader("Position-wise Frequency Heatmap")
-    # Frequency of each number in each position
     pos_counts = df[['N1','N2','N3','N4','N5','N6']].apply(pd.Series.value_counts).fillna(0)
     fig_heatmap = px.imshow(pos_counts.T, text_auto=True, aspect="auto",
                             title="Number Frequency by Draw Position",
@@ -185,6 +197,6 @@ with tab3:
     df['Even_Count'] = 6 - df['Odd_Count']
     fig_odd_even = go.Figure()
     fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Odd_Count'], mode='lines+markers', name='Odd Count'))
-    fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Even_Count'], mode='lines+markers', name='Even Count'))  # Fixed typo here
+    fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Even_Count'], mode='lines+markers', name='Even Count'))
     fig_odd_even.update_layout(title='Odd vs Even Numbers per Draw', xaxis_title='Date', yaxis_title='Count')
     st.plotly_chart(fig_odd_even, use_container_width=True)
