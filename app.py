@@ -85,12 +85,13 @@ def numbers_from_profile(lucky_str, unit_str, freq_series):
         if len(unique_nums) == 6:
             break
 
-    # If we don't have 6, fill with hottest numbers
-    while len(unique_nums) < 6:
-        for hot in hot_numbers:
-            if hot not in unique_nums:
-                unique_nums.append(hot)
-                break
+    # If we don't have 6, fill with hottest numbers (ensuring they aren't already chosen)
+    hot_list = hot_numbers  # use global hot_numbers
+    i = 0
+    while len(unique_nums) < 6 and i < len(hot_list):
+        if hot_list[i] not in unique_nums:
+            unique_nums.append(hot_list[i])
+        i += 1
 
     return sorted(unique_nums[:6])
 
@@ -184,6 +185,6 @@ with tab3:
     df['Even_Count'] = 6 - df['Odd_Count']
     fig_odd_even = go.Figure()
     fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Odd_Count'], mode='lines+markers', name='Odd Count'))
-    fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Everaged_Count'], mode='lines+markers', name='Even Count'))
+    fig_odd_even.add_trace(go.Scatter(x=df['Date'], y=df['Even_Count'], mode='lines+markers', name='Even Count'))  # Fixed typo here
     fig_odd_even.update_layout(title='Odd vs Even Numbers per Draw', xaxis_title='Date', yaxis_title='Count')
     st.plotly_chart(fig_odd_even, use_container_width=True)
