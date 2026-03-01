@@ -19,34 +19,76 @@ st.sidebar.header("Data Source")
 # Option to upload a CSV file
 uploaded_file = st.sidebar.file_uploader("Upload your TOTO results CSV", type=["csv"])
 
-# If no file uploaded, fallback to a remote URL (set your own below)
-DATA_URL = "https://raw.githubusercontent.com/yourusername/toto-data/main/toto_results.csv"  # 🔁 REPLACE WITH YOUR RAW URL
+# Fallback remote URL (replace with your own raw URL)
+DATA_URL = "https://raw.githubusercontent.com/yourusername/toto-data/main/toto_results.csv"
 
 st.sidebar.markdown("---")
 st.sidebar.caption("⚠️ This tool is for entertainment only. No guarantee of winning.")
 
-# --- DATA LOADING (with caching and fallback) ---
+# --- DATA LOADING with column normalisation ---
 @st.cache_data
 def load_data_from_url(url):
     df = pd.read_csv(url)
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values('Date', ascending=False).reset_index(drop=True)
-    return df
+    return standardise_columns(df)
 
 @st.cache_data
 def load_data_from_file(uploaded_file):
     df = pd.read_csv(uploaded_file)
+    return standardise_columns(df)
+
+def standardise_columns(df):
+    """
+    Rename columns to standard names: Date, N1..N6, Add.
+    Handles common variations.
+    """
+    df = df.copy()
+    # Convert Date column
+    date_col = None
+    for col in df.columns:
+        if col.lower() in ['date', 'drawdate', 'draw date']:
+            date_col = col
+            break
+    if date_col is None:
+        st.error("No Date column found. Please ensure your CSV has a Date column.")
+        st.stop()
+    df.rename(columns={date_col: 'Date'}, inplace=True)
     df['Date'] = pd.to_datetime(df['Date'])
+
+    # Rename number columns N1..N6
+    for i in range(1, 7):
+        found = False
+        for col in df.columns:
+            if col.lower() in [f'n{i}', f'number{i}', f'num{i}']:
+                df.rename(columns={col: f'N{i}'}, inplace=True)
+                found = True
+                break
+        if not found:
+            st.error(f"Column for N{i} not found. Please ensure your CSV has columns N1..N6.")
+            st.stop()
+
+    # Rename Additional number column (optional)
+    add_col = None
+    for col in df.columns:
+        if col.lower() in ['add', 'additional', 'add1', 'additional number']:
+            add_col = col
+            break
+    if add_col:
+        df.rename(columns={add_col: 'Add'}, inplace=True)
+    else:
+        # Create an empty Add column with NaN
+        df['Add'] = np.nan
+
+    # Sort by date descending
     df = df.sort_values('Date', ascending=False).reset_index(drop=True)
     return df
 
-# Load the data
+# --- LOAD DATA ---
 if uploaded_file is not None:
     try:
         df = load_data_from_file(uploaded_file)
         st.sidebar.success(f"Loaded {len(df)} draws from uploaded file.")
     except Exception as e:
-        st.sidebar.error("Error reading uploaded file. Please ensure it has columns: Date, N1, N2, N3, N4, N5, N6, Add")
+        st.sidebar.error(f"Error reading uploaded file: {e}")
         st.stop()
 else:
     try:
@@ -135,7 +177,9 @@ with tab1:
         st.subheader("Latest Result")
         latest = df.iloc[0]
         st.success(f"Numbers: {latest['N1']}, {latest['N2']}, {latest['N3']}, {latest['N4']}, {latest['N5']}, {latest['N6']}")
-        st.warning(f"Additional: {latest['Add']}")
+        # Safely display Additional number (if available)
+        additional = latest['Add'] if pd.notna(latest['Add']) else 'N/A'
+        st.warning(f"Additional: {additional}")
 
     st.subheader("🔥 Hot & Cold Numbers")
     colA, colB = st.columns(2)
