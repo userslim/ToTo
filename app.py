@@ -12,6 +12,8 @@ st.title("🎰 TOTO Personal Strategy Dashboard")
 st.sidebar.header("Your Lucky Profile")
 lucky_string = st.sidebar.text_input("Enter Lucky String", value="3964215")
 unit_no = st.sidebar.text_input("Unit No", value="02-73")
+carplate = st.sidebar.text_input("Carplate No (optional)", value="")
+mobile = st.sidebar.text_input("Mobile No (optional)", value="")
 
 st.sidebar.markdown("---")
 st.sidebar.header("Data Source")
@@ -117,25 +119,35 @@ hot_numbers = freq_all.nlargest(10).index.tolist()
 cold_numbers = freq_all.nsmallest(10).index.tolist()
 
 # --- HELPER FUNCTIONS FOR NUMBER GENERATION ---
-def numbers_from_profile(lucky_str, unit_str, freq_series):
-    """Generate 6 numbers based on lucky string, unit number, and hot numbers."""
-    lucky_digits = [int(ch) for ch in lucky_str if ch.isdigit()]
-    if not lucky_digits:
-        lucky_digits = [3, 9, 6, 4, 2, 1, 5]
-    base = sum(lucky_digits) % 45 + 1
+def numbers_from_profile(lucky_str, unit_str, carplate_str, mobile_str, freq_series):
+    """
+    Generate 6 numbers based on lucky string, unit number, carplate, mobile,
+    and hot numbers. Aggregates all digits from provided fields.
+    """
+    # Collect all digits from all inputs
+    all_digits = []
+    for s in [lucky_str, unit_str, carplate_str, mobile_str]:
+        if s:  # only if non-empty
+            all_digits.extend([int(ch) for ch in s if ch.isdigit()])
 
-    unit_digits = [int(ch) for ch in unit_str if ch.isdigit()]
-    if not unit_digits:
-        unit_digits = [0, 2, 7, 3]
-    unit_sum = sum(unit_digits) % 20
+    # Fallback digits if nothing provided
+    if not all_digits:
+        all_digits = [3, 9, 6, 4, 2, 1, 5, 0, 2, 7, 3]  # extended fallback
 
+    base = sum(all_digits) % 45 + 1  # 1..45
+
+    # Use a secondary sum for offset (e.g., sum of first few digits)
+    offset_base = sum(all_digits[:5]) % 20 if len(all_digits) >= 5 else sum(all_digits) % 20
+
+    # Generate candidate numbers
     numbers = []
     for i in range(10):
-        num = (base + i * unit_sum + (i+1)*7) % 49
+        num = (base + i * offset_base + (i+1)*7) % 49
         if num == 0:
             num = 49
         numbers.append(num)
 
+    # Remove duplicates and keep first 6
     unique_nums = []
     for n in numbers:
         if n not in unique_nums:
@@ -177,7 +189,6 @@ with tab1:
         st.subheader("Latest Result")
         latest = df.iloc[0]
         st.success(f"Numbers: {latest['N1']}, {latest['N2']}, {latest['N3']}, {latest['N4']}, {latest['N5']}, {latest['N6']}")
-        # Safely display Additional number (if available)
         additional = latest['Add'] if pd.notna(latest['Add']) else 'N/A'
         st.warning(f"Additional: {additional}")
 
@@ -199,8 +210,8 @@ with tab2:
 
     if st.button("Generate Set"):
         if strategy == "Profile + Hot Mix":
-            rec_set = numbers_from_profile(lucky_string, unit_no, freq_all)
-            explanation = "Derived from your lucky string + unit number, blended with historical hot numbers."
+            rec_set = numbers_from_profile(lucky_string, unit_no, carplate, mobile, freq_all)
+            explanation = "Derived from your lucky string, unit number, carplate, and mobile (if provided), blended with historical hot numbers."
         elif strategy == "Most Frequent (Hot)":
             rec_set = hot_numbers[:6]
             explanation = "Top 6 most frequently drawn numbers overall."
